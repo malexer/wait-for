@@ -4,46 +4,71 @@ TIMEOUT=15
 QUIET=0
 
 echoerr() {
-  if [ "$QUIET" -ne 1 ]; then printf "%s\n" "$*" 1>&2; fi
+  printf "wait-for-pgtable: %s\n" "$*" 1>&2
+}
+
+echomsg() {
+  if [ "$QUIET" -ne 1 ]; then echoerr "$*"; fi
 }
 
 usage() {
   exitcode="$1"
   cat << USAGE >&2
+
 Usage:
-  $cmdname host:port [-t timeout] [-- command args]
-  -q | --quiet                        Do not output any status messages
+  wait-for-pgtable TABLE [-t timeout] [-q] [-- command args]
+
+  TABLE                               Name of the table to check for existence.
+  -q | --quiet                        Do not output status messages (only exit errors)
   -t TIMEOUT | --timeout=timeout      Timeout in seconds, zero for no timeout
   -- COMMAND ARGS                     Execute command with args after the test finishes
+
+Connection to Postgres should be specified by environment variables:
+PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD.
+More info: https://www.postgresql.org/docs/current/static/libpq-envars.html
 USAGE
   exit "$exitcode"
 }
 
-wait_for() {
+check_psql_exists() {
+  command -v psql > /dev/null 2>&1
+
+  result=$?
+  if [ $result -ne 0 ] ; then
+    echoerr '"psql" command was not found, you need to install it.'
+    exit 3
+  fi
+}
+
+wait_for_pgtable() {
   for i in `seq $TIMEOUT` ; do
-    nc -z "$HOST" "$PORT" > /dev/null 2>&1
-    
-    result=$?
-    if [ $result -eq 0 ] ; then
-      if [ $# -gt 0 ] ; then
-        exec "$@"
+    nc -z "$PGHOST" "$PGPORT" > /dev/null 2>&1
+
+    result_nc=$?
+    if [ $result_nc -eq 0 ] ; then
+      psql -wc "SELECT 1 FROM ${TABLE} LIMIT 0;" > /dev/null 2>&1
+
+      result_table=$?
+      if [ $result_table -eq 0 ] ; then
+        if [ $# -gt 0 ] ; then
+          exec "$@"
+        fi
+        exit 0
+      else
+        echomsg "Error querying the table '${TABLE}' in Postgres, retrying..."
       fi
-      exit 0
+    else
+      echomsg "Can't connect to Postgres, retrying..."
     fi
     sleep 1
   done
-  echo "Operation timed out" >&2
+  echoerr "Operation timed out"
   exit 1
 }
 
 while [ $# -gt 0 ]
 do
   case "$1" in
-    *:* )
-    HOST=$(printf "%s\n" "$1"| cut -d : -f 1)
-    PORT=$(printf "%s\n" "$1"| cut -d : -f 2)
-    shift 1
-    ;;
     -q | --quiet)
     QUIET=1
     shift 1
@@ -65,15 +90,22 @@ do
     usage 0
     ;;
     *)
-    echoerr "Unknown argument: $1"
-    usage 1
+    TABLE="$1"
+    shift
     ;;
   esac
 done
 
-if [ "$HOST" = "" -o "$PORT" = "" ]; then
-  echoerr "Error: you need to provide a host and port to test."
+check_psql_exists
+
+if [ "$TABLE" = "" ]; then
+  echoerr "ERROR - you need to provide a TABLE name to test."
   usage 2
 fi
 
-wait_for "$@"
+if [ "$PGHOST" = "" -o "$PGPORT" = "" -o "$PGDATABASE" = "" -o "$PGUSER" = "" -o "$PGPASSWORD" = "" ]; then
+  echoerr "ERROR - you need to provide a PGHOST, PGPORT, PGDATABASE, PGUSER and PGPASSWORD as environment variables."
+  usage 2
+fi
+
+wait_for_pgtable "$@"
