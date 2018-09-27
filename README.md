@@ -7,7 +7,7 @@ I've forked and updated it to be used specifically for testing of Postgres conne
 
 `wait-for-pgtable` will perform next tests:
 1. Try to connect to Postgres by PGHOST:PGPORT.
-2. Try to query the TABLE. This will help to solve the case when Postgres is up but is not ready for querying yet.
+2. Try to query the TABLE (or several in a row). This will help to solve the case when Postgres is up but is not ready for querying yet.
 
 ### Requirements
 
@@ -21,9 +21,11 @@ When using this tool, you need:
 
 ```
 Usage:
-  wait-for-pgtable TABLE [-t timeout] [-q] [-- command args]
+  wait-for-pgtable TABLE [TABLE ...] [-t timeout] [-q] [-- command args]
 
   TABLE                               Name of the table to check for existence.
+                                      Multiple table names are allowed - all
+                                      of them will be checked.
   -q | --quiet                        Do not output status messages (only exit errors)
   -t TIMEOUT | --timeout=timeout      Timeout in seconds, zero for no timeout
   -- COMMAND ARGS                     Execute command with args after the test finishes
